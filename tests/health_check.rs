@@ -1,7 +1,25 @@
+use sqlx::{PgConnection, Connection, PgPool, Executor};
+use zero_to_prod::{
+    configuration::get_configuration,
+    get_subscriber,
+    init_subscriber};
+use std::sync::LazyLock;
+use uuid::Uuid;
+use secrecy::ExposeSecret;
+
+static INIT_SUBSCRIBER: LazyLock<()> = LazyLock::new(|| {
+    if std::env::var("TEST_LOG").is_ok() {
+        init_subscriber(get_subscriber("test".into(), "debug".into(), std::io::stdout));
+    } else {
+        init_subscriber(get_subscriber("test".into(), "debug".into(), std::io::sink));
+    }
+
+});
+
 #[tokio::test]
 async fn test_health_check() {
     // Arrange
-    let host = spawn_app().await;
+    let TestApp { address: host, .. } = spawn_app().await;
     let client = reqwest::Client::new();
 
     // Act
@@ -19,10 +37,10 @@ async fn test_health_check() {
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // Arrange
-    let host = spawn_app().await;
+    let TestApp { address: host, db_pool } = spawn_app().await;
     let client = reqwest::Client::new();
     let body = "name=marcin&email=mail%40marszy.com";
-    // let db_connection = 
+
 
     // Act
     let response = client
@@ -35,12 +53,20 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
     
     // Arrange
     assert_eq!(200, response.status().as_u16());
+
+    let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
+        .fetch_one(&db_pool)
+        .await
+        .expect("Failed to fetch saved subscription.");
+    
+    assert_eq!(saved.email, "mail@marszy.com");
+    assert_eq!(saved.name, "marcin");
 }
 
 #[tokio::test]
 async fn subscribe_returns_a_422_when_data_is_missing() {
     // Arrange
-    let host = spawn_app().await;
+    let TestApp { address: host, .. } = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = vec![
         ("name=marcin", "missing mail"),
@@ -65,10 +91,40 @@ async fn subscribe_returns_a_422_when_data_is_missing() {
     }
 }
 
-async fn spawn_app() -> String {
+struct TestApp {
+    address: String,
+    db_pool: PgPool
+}
+
+async fn spawn_app() -> TestApp {
+    LazyLock::force(&INIT_SUBSCRIBER); 
+    
+    let mut configuration = get_configuration().expect("Failed to read configuration");
+    let database = &mut configuration.database;
+    database.database_name = Uuid::new_v4().to_string();
+
+    let mut connection = PgConnection::connect(&database.connection_string_to_instance().expose_secret())
+        .await
+        .expect("Failed to connect to Postgres");
+    connection.execute(format!(r#"CREATE DATABASE "{}";"#, database.database_name).as_str())
+        .await
+        .expect("Failed to create database.");
+        
+    let db_pool = PgPool::connect(&database.connection_string().expose_secret())
+        .await
+        .expect("Failed to connect to Postgres");
+    
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to migrate the database");
+
     let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(zero_to_prod::run(listener));
+    tokio::spawn(zero_to_prod::run(listener, db_pool.clone()));
 
-    format!("127.0.0.1:{port}")
+    TestApp {
+        address: format!("127.0.0.1:{port}"),
+        db_pool
+    }
 }

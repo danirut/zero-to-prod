@@ -16,8 +16,7 @@ async fn main() {
     // Panic if we can't read configuration
     let configuration = get_configuration().expect("Failed to read configuration.");
     let connection_pool =
-        PgPool::connect_lazy(&configuration.database.connection_string().expose_secret())
-            .expect("Failed to connect to Postgres.");
+        PgPool::connect_lazy_with(configuration.database.with_db());
     let address = format!(
         "{}:{}",
         configuration.application.host, configuration.application.port

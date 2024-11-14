@@ -103,14 +103,14 @@ async fn spawn_app() -> TestApp {
     let database = &mut configuration.database;
     database.database_name = Uuid::new_v4().to_string();
 
-    let mut connection = PgConnection::connect(&database.connection_string_to_instance().expose_secret())
+    let mut connection = PgConnection::connect_with(&database.without_db())
         .await
         .expect("Failed to connect to Postgres");
     connection.execute(format!(r#"CREATE DATABASE "{}";"#, database.database_name).as_str())
         .await
         .expect("Failed to create database.");
         
-    let db_pool = PgPool::connect(&database.connection_string().expose_secret())
+    let db_pool = PgPool::connect_with(database.with_db())
         .await
         .expect("Failed to connect to Postgres");
     

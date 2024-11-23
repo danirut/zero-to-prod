@@ -6,7 +6,7 @@ use tracing::Instrument;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::domain::{NewSubscriber, SubscriberName};
+use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -29,7 +29,7 @@ pub async fn subscribe(
     tracing::info!("Saving new subscriber details in the database");
     
     let new_subscriber = NewSubscriber {
-        email: form.email,
+        email: SubscriberEmail::parse(form.email).map_err(|e| StatusCode::BAD_REQUEST)?,
         name: SubscriberName::parse(form.name).map_err(|e| StatusCode::BAD_REQUEST)?,
     };
 
@@ -52,14 +52,14 @@ pub async fn insert_subscriber(
         VALUES ($1, $2, $3, $4)
     "#,
         Uuid::new_v4(),
-        new_subscriber.email,
+        new_subscriber.email.as_ref(),
         new_subscriber.name.as_ref(),
         Utc::now()
     )
     .execute(connection_pool)
     .await
     .map(|_| {
-        tracing::info!("New subscriber {} saved", new_subscriber.email);
+        tracing::info!("New subscriber {} saved", new_subscriber.email.as_ref());
     })
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);

@@ -27,22 +27,19 @@ tracing-bunyan-formatter = "0.3.9"
 secrecy = { version = "0.10.3", features = ["serde"] }
 tower-http = { version = "0.6.1", features = ["request-id", "trace", "util"] }
 serde-aux = "4.5.0"
+unicode-segmentation = "1"
+validator = "0.14"
 
 # Using table-like toml syntax to avoid a super-long line!
 [dependencies.sqlx]
 version = "0.8.2"
 default-features = false
-features = [
-    "runtime-tokio",
-    "macros",
-    "postgres",
-    "uuid",
-    "chrono",
-    "migrate",
-]
+features = ["runtime-tokio", "macros", "postgres", "uuid", "chrono", "migrate", "tls-rustls"]
 
 [build-dependencies]
 syn = "1"
 
 [dev-dependencies]
 reqwest = "0.12.5"
+claim = "0.5"
+fake = "~2.3"

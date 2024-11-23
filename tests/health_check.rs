@@ -1,19 +1,19 @@
-use sqlx::{PgConnection, Connection, PgPool, Executor};
-use zero_to_prod::{
-    configuration::get_configuration,
-    get_subscriber,
-    init_subscriber};
+use secrecy::ExposeSecret;
+use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use uuid::Uuid;
-use secrecy::ExposeSecret;
+use zero_to_prod::{configuration::get_configuration, get_subscriber, init_subscriber};
 
 static INIT_SUBSCRIBER: LazyLock<()> = LazyLock::new(|| {
     if std::env::var("TEST_LOG").is_ok() {
-        init_subscriber(get_subscriber("test".into(), "debug".into(), std::io::stdout));
+        init_subscriber(get_subscriber(
+            "test".into(),
+            "debug".into(),
+            std::io::stdout,
+        ));
     } else {
         init_subscriber(get_subscriber("test".into(), "debug".into(), std::io::sink));
     }
-
 });
 
 #[tokio::test]
@@ -37,10 +37,12 @@ async fn test_health_check() {
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // Arrange
-    let TestApp { address: host, db_pool } = spawn_app().await;
+    let TestApp {
+        address: host,
+        db_pool,
+    } = spawn_app().await;
     let client = reqwest::Client::new();
     let body = "name=marcin&email=mail%40marszy.com";
-
 
     // Act
     let response = client
@@ -50,7 +52,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .send()
         .await
         .expect("Failed to execute request");
-    
+
     // Arrange
     assert_eq!(200, response.status().as_u16());
 
@@ -58,7 +60,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .fetch_one(&db_pool)
         .await
         .expect("Failed to fetch saved subscription.");
-    
+
     assert_eq!(saved.email, "mail@marszy.com");
     assert_eq!(saved.name, "marcin");
 }
@@ -71,7 +73,7 @@ async fn subscribe_returns_a_422_when_data_is_missing() {
     let test_cases = vec![
         ("name=marcin", "missing mail"),
         ("email=mail%40marszy.com", "missing name"),
-        ("", "missing both name and email")
+        ("", "missing both name and email"),
     ];
 
     // Act
@@ -83,22 +85,53 @@ async fn subscribe_returns_a_422_when_data_is_missing() {
             .send()
             .await
             .expect("Failed to execute request");
-        
+
         // Arrange
-        assert_eq!(422, response.status().as_u16(), 
+        assert_eq!(
+            422,
+            response.status().as_u16(),
             "The API did not fail with 400 Bad Request when the payload was {}",
-        error_message);
+            error_message
+        );
+    }
+}
+
+#[tokio::test]
+async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
+    // Arrange
+    let TestApp { address: host, .. } = spawn_app().await;
+    let client = reqwest::Client::new();
+    let test_cases = vec![
+        ("name=&email=ursula_le_guin%40gmail.com", "empty name"),
+        ("name=Ursula&email=", "empty email"),
+        ("name=Ursula&email=definitely-not-an-email", "invalid email"),
+    ];
+    for (invalid_body, error_message) in test_cases {
+        let response = client
+            .post(&format!("http://{host}/subscriptions"))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(invalid_body)
+            .send()
+            .await
+            .expect("Failed to execute request");
+        // Assert
+        assert_eq!(
+            200,
+            response.status().as_u16(),
+            "The API did not return a 200 OK when the payload was {}.",
+            error_message
+        );
     }
 }
 
 struct TestApp {
     address: String,
-    db_pool: PgPool
+    db_pool: PgPool,
 }
 
 async fn spawn_app() -> TestApp {
-    LazyLock::force(&INIT_SUBSCRIBER); 
-    
+    LazyLock::force(&INIT_SUBSCRIBER);
+
     let mut configuration = get_configuration().expect("Failed to read configuration");
     let database = &mut configuration.database;
     database.database_name = Uuid::new_v4().to_string();
@@ -106,14 +139,15 @@ async fn spawn_app() -> TestApp {
     let mut connection = PgConnection::connect_with(&database.without_db())
         .await
         .expect("Failed to connect to Postgres");
-    connection.execute(format!(r#"CREATE DATABASE "{}";"#, database.database_name).as_str())
+    connection
+        .execute(format!(r#"CREATE DATABASE "{}";"#, database.database_name).as_str())
         .await
         .expect("Failed to create database.");
-        
+
     let db_pool = PgPool::connect_with(database.with_db())
         .await
         .expect("Failed to connect to Postgres");
-    
+
     sqlx::migrate!("./migrations")
         .run(&db_pool)
         .await
@@ -125,6 +159,6 @@ async fn spawn_app() -> TestApp {
 
     TestApp {
         address: format!("127.0.0.1:{port}"),
-        db_pool
+        db_pool,
     }
 }

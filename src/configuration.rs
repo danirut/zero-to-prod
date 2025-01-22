@@ -1,10 +1,16 @@
+use crate::domain::SubscriberEmail;
+use eyre::Result;
 use secrecy::{ExposeSecret, SecretString};
 use serde_aux::field_attributes::deserialize_number_from_string;
-use sqlx::{ConnectOptions, postgres::{PgConnectOptions, PgSslMode}};
+use sqlx::{
+    postgres::{PgConnectOptions, PgSslMode},
+    ConnectOptions,
+};
 #[derive(serde::Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
+    pub email_client: EmailClientSettings,
 }
 
 #[derive(serde::Deserialize)]
@@ -25,6 +31,33 @@ pub struct DatabaseSettings {
     pub require_ssl: bool,
 }
 
+#[derive(serde::Deserialize)]
+pub struct EmailClientSettings {
+    pub base_url: String,
+    pub sender_email: String,
+    pub authorization_token: SecretString,
+    pub timeout_milliseconds: u64,
+}
+
+impl ApplicationSettings {
+    pub fn address(&self) -> String {
+        format!(
+            "{}:{}",
+            self.host, self.port
+        )
+    }
+}
+
+impl EmailClientSettings {
+    pub fn sender(&self) -> Result<SubscriberEmail> {
+        SubscriberEmail::parse(self.sender_email.clone()).map_err(|e| eyre::eyre!(e))
+    }
+
+    pub fn timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.timeout_milliseconds)
+    }
+}
+
 impl DatabaseSettings {
     pub fn with_db(&self) -> PgConnectOptions {
         self.without_db()
@@ -35,7 +68,7 @@ impl DatabaseSettings {
     pub fn without_db(&self) -> PgConnectOptions {
         let ssl_mode = match self.require_ssl {
             true => PgSslMode::Require,
-            false => PgSslMode::Prefer
+            false => PgSslMode::Prefer,
         };
 
         PgConnectOptions::new()

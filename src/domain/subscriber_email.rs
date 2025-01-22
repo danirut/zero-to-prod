@@ -1,13 +1,14 @@
 use validator::validate_email;
+use eyre::{eyre, Result};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SubscriberEmail(String);
 impl SubscriberEmail {
-    pub fn parse(s: String) -> Result<SubscriberEmail, String> {
+    pub fn parse(s: String) -> Result<SubscriberEmail> {
         if validate_email(&s) {
             Ok(Self(s))
         } else {
-            Err(format!("{} is not a valid subscriber email.", s))
+            Err(eyre!("{} is not a valid subscriber email.", s))
         }
     }
 }
@@ -19,6 +20,7 @@ impl AsRef<str> for SubscriberEmail {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::SubscriberEmail;
     use claim::assert_err;

@@ -1,26 +1,20 @@
-use secrecy::ExposeSecret;
-use sqlx::PgPool;
 use tokio::net::TcpListener;
 use zero_to_prod::configuration::get_configuration;
-use zero_to_prod::{get_subscriber, init_subscriber, run};
+use zero_to_prod::{startup::{router, build}, get_subscriber, init_subscriber};
+use eyre::Result;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     init_subscriber(get_subscriber(
         "zero-to-prod".into(),
         "debug".into(),
         std::io::stdout,
     ));
 
-    
-    // Panic if we can't read configuration
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection_pool =
-        PgPool::connect_lazy_with(configuration.database.with_db());
-    let address = format!(
-        "{}:{}",
-        configuration.application.host, configuration.application.port
-    );
-    let listener = TcpListener::bind(address).await.unwrap();
-    run(listener, connection_pool).await;
+    let listener = TcpListener::bind(configuration.application.address()).await.unwrap();
+    let app = router(build(configuration)?);
+    tracing::info!("Starting zero-to-prod");
+    // run our app with hyper, listening globally on port 3000
+    Ok(axum::serve(listener, app).await?)
 }

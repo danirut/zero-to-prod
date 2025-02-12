@@ -3,12 +3,12 @@ use crate::helpers::TestApp;
 #[tokio::test]
 async fn test_health_check() {
     // Arrange
-    let TestApp { address: host, .. } = TestApp::spawn().await;
+    let TestApp { base_url, port, .. } = TestApp::spawn().await;
     let client = reqwest::Client::new();
 
     // Act
     let response = client
-        .get(format!("http://{host}/health_check"))
+        .get(format!("http://{base_url}:{port}/health_check"))
         .send()
         .await
         .expect("Failed to execute request");

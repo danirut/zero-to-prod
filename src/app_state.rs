@@ -7,4 +7,5 @@ use email_client::EmailClient;
 pub struct AppState {
     pub connection_pool: PgPool,
     pub email_client: EmailClient,
+    pub host: String,
 }

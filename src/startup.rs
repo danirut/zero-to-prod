@@ -26,11 +26,13 @@ pub fn build(configuration: Settings) -> Result<AppState> {
         configuration.email_client.authorization_token,
         timeout,
     );
+    let host = configuration.application.host;
 
     // run(listener, connection_pool, email_client)
     Ok(AppState {
         connection_pool,
         email_client,
+        host,
     })
 }
 
@@ -39,6 +41,7 @@ pub fn router(state: AppState) -> Router {
     
     Router::new()
     .route("/health_check", get(routes::health_check))
+    .route("/subscriptions/confirm/{token}", get(routes::confirm_subscription))
     .route("/subscriptions", post(routes::subscribe))
     .layer(
         ServiceBuilder::new()
